@@ -5,6 +5,7 @@
 ## 功能特性
 
 - ⏱ **专注倒计时**：自定义专注时长
+- ✨ **网页版界面**：本地网页 UI，圆环进度 + 实时拦截流水，无边框窗口像原生应用
 - 🚫 **App 白名单**：专注期间自动关闭非白名单应用
 - 🪟 **精准拦截**：只关闭有可见窗口的应用，不会误杀系统服务、驱动和输入法
 - 🌐 **网页白名单**：通过本地代理拦截非白名单网站
@@ -24,9 +25,14 @@ focus-guard/
 │   ├── process_guard.py  # App 白名单拦截
 │   └── web_guard.py      # 网页白名单代理
 ├── gui/
-│   └── app.py            # CustomTkinter 图形界面
+│   └── app.py            # CustomTkinter 图形界面（备选）
+├── webui/
+│   ├── controller.py     # 与界面无关的会话控制器（计时 + 双拦截 + 统计）
+│   ├── server.py         # 本地 HTTP 服务：静态文件 + JSON API + SSE
+│   └── static/           # 网页版前端（index.html / style.css / app.js）
 ├── assets/               # 图标等资源（可扩展）
-├── main.py               # 程序入口
+├── main.py               # 桌面版入口（CustomTkinter）
+├── main_web.py           # 网页版入口
 ├── requirements.txt
 ├── .gitignore
 └── README.md
@@ -40,7 +46,17 @@ focus-guard/
 
 ## 安装与运行
 
-### 方式一：双击批处理文件（新手推荐）
+### 方式零：网页版（推荐，界面最好看）
+
+1. 双击 **`start_web.bat`**。
+2. 脚本会启动本地服务（默认 `http://127.0.0.1:7788`），并自动用 Edge/Chrome 的 `--app` 模式打开一个无地址栏窗口，看起来就是个桌面程序。
+3. 快捷键：`空格` 开始/暂停，`Esc` 结束。
+4. 关掉那个窗口或按 `Ctrl+C`，服务退出，系统代理自动还原。
+
+网页版只依赖 `psutil`（`pip install -r requirements.txt` 即可），不需要 `customtkinter`。
+服务默认只监听 `127.0.0.1`，不会暴露到局域网；想用手机看可加 `--host 0.0.0.0`（注意安全）。
+
+### 方式一：双击批处理文件（桌面版）
 
 1. 解压 `focus-guard.zip` 到任意文件夹（例如桌面）。
 2. **双击 `setup.bat`**：检查 Python、创建虚拟环境、安装依赖。第一次需要联网，约 1 分钟。
@@ -52,7 +68,8 @@ focus-guard/
 | 文件 | 作用 |
 |---|---|
 | `setup.bat` | 安装 Python 依赖环境 |
-| `start.bat` | 启动 FocusGuard（需要管理员权限） |
+| `start_web.bat` | 启动网页版界面（推荐） |
+| `start.bat` | 启动桌面版 FocusGuard（需要管理员权限） |
 | `test_dry.bat` | 安全干跑测试 |
 | `reset_proxy.bat` | 紧急恢复系统代理 |
 

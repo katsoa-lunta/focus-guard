@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FocusGuard · 专注守卫</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="aurora"><span></span><span></span><span></span></div>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">FG</div>
+    <div class="brand-text">
+      <h1>FocusGuard</h1>
+      <p>专注守卫 · 白名单模式</p>
+    </div>
+  </div>
+  <div class="status" id="status-pill"><i></i><span id="status-text">准备就绪</span></div>
+</header>
+
+<main class="layout">
+  <section class="card timer-card">
+    <div class="ring-wrap">
+      <svg viewBox="0 0 320 320" class="ring" aria-hidden="true">
+        <defs>
+          <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#34d399"/>
+            <stop offset="55%" stop-color="#22d3ee"/>
+            <stop offset="100%" stop-color="#818cf8"/>
+          </linearGradient>
+        </defs>
+        <circle class="ring-bg" cx="160" cy="160" r="140"/>
+        <circle class="ring-fg" id="ring" cx="160" cy="160" r="140"/>
+      </svg>
+      <div class="ring-center">
+        <div class="time" id="time">25:00</div>
+        <div class="hint" id="hint">按空格开始专注</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="btn-start" class="btn primary">开始专注</button>
+      <button id="btn-pause" class="btn ghost" disabled>暂停</button>
+      <button id="btn-stop" class="btn ghost danger" disabled>停止</button>
+    </div>
+
+    <div class="duration">
+      <label for="duration">时长</label>
+      <input id="duration" type="number" min="1" max="240" step="5" value="25">
+      <span class="unit">分钟</span>
+      <button id="btn-apply" class="btn tiny">应用</button>
+    </div>
+
+    <div class="metrics">
+      <div class="metric"><span id="m-apps">0</span><small>本次关闭应用</small></div>
+      <div class="metric"><span id="m-web">0</span><small>本次拦截网站</small></div>
+      <div class="metric"><span id="m-min">0</span><small>累计专注分钟</small></div>
+    </div>
+  </section>
+
+  <section class="card list-card">
+    <div class="card-head">
+      <h2>App 白名单</h2>
+      <span class="badge" id="apps-count">0</span>
+    </div>
+    <div class="chips" id="apps-chips"></div>
+    <form class="adder" id="apps-form">
+      <input id="apps-input" placeholder="进程名，如 code.exe" autocomplete="off">
+      <button class="btn tiny">添加</button>
+    </form>
+
+    <div class="divider"></div>
+
+    <div class="card-head">
+      <h2>网页白名单</h2>
+      <span class="badge" id="sites-count">0</span>
+    </div>
+    <div class="chips" id="sites-chips"></div>
+    <form class="adder" id="sites-form">
+      <input id="sites-input" placeholder="域名，如 github.com" autocomplete="off">
+      <button class="btn tiny">添加</button>
+    </form>
+
+    <div class="divider"></div>
+
+    <div class="strict-row">
+      <label class="switch">
+        <input type="checkbox" id="strict">
+        <span class="track"><span class="dot"></span></span>
+      </label>
+      <div class="strict-text">
+        <b>严格模式</b>
+        <small>专注中无法暂停或提前结束</small>
+      </div>
+    </div>
+
+    <button id="btn-preview" class="btn ghost small">预览点开始后会被关闭的程序</button>
+  </section>
+
+  <section class="card events-card">
+    <div class="card-head">
+      <h2>拦截流水</h2>
+      <span class="badge soft" id="events-count">0</span>
+    </div>
+    <ul id="events" class="events">
+      <li class="empty">还没有事件，开始一次专注试试</li>
+    </ul>
+  </section>
+</main>
+
+<div id="toast" class="toast"></div>
+<script src="/app.js"></script>
+</body>
+</html>

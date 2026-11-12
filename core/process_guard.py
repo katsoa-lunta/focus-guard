@@ -132,6 +132,31 @@ class ProcessGuard:
             return True
         return False
 
+    def scan_blockable(self) -> list[tuple[str, int]]:
+        """Return the (name, pid) pairs that a focus session would terminate now."""
+        try:
+            import psutil
+        except ImportError:
+            return []
+        if not self.whitelist:
+            return []
+        windowed = _windowed_pids() if self.only_windowed else set()
+        found: dict[str, int] = {}
+        for proc in psutil.process_iter(["pid", "name"]):
+            try:
+                name = proc.info["name"]
+                pid = proc.info["pid"]
+                if not name or pid in (self._self_pid, self._parent_pid):
+                    continue
+                if self.only_windowed and pid not in windowed:
+                    continue
+                if self.is_allowed(name):
+                    continue
+                found.setdefault(name.lower(), pid)
+            except Exception:
+                continue
+        return sorted(found.items())
+
     def start(self) -> None:
         if self._running:
             return
