@@ -1,0 +1,138 @@
+"""Process guard: close non-whitelisted applications during focus."""
+from __future__ import annotations
+
+import logging
+import sys
+import threading
+import time
+from typing import Callable, Optional, Set
+
+logger = logging.getLogger(__name__)
+
+# System-critical processes that must never be terminated.
+CRITICAL_PROCESSES = {
+    "csrss.exe",
+    "wininit.exe",
+    "winlogon.exe",
+    "services.exe",
+    "lsass.exe",
+    "smss.exe",
+    "svchost.exe",
+    "fontdrvhost.exe",
+    "dwm.exe",
+    "registry.exe",
+    "system",
+    "system idle process",
+    "taskmgr.exe",
+    "conhost.exe",
+    "powershell.exe",
+    "cmd.exe",
+    "explorer.exe",
+}
+
+
+def _get_self_name() -> str:
+    return sys.executable.lower().split("\\")[-1]
+
+
+class ProcessGuard:
+    """Monitors running processes and terminates non-whitelisted ones."""
+
+    def __init__(
+        self,
+        whitelist: Optional[Set[str]] = None,
+        protected: Optional[Set[str]] = None,
+        on_blocked: Optional[Callable[[str, int], None]] = None,
+        scan_interval: float = 1.5,
+        dry_run: bool = False,
+    ):
+        self.whitelist: Set[str] = set(x.lower() for x in (whitelist or []))
+        self.protected: Set[str] = set(x.lower() for x in (protected or [])) | CRITICAL_PROCESSES
+        self.protected.add(_get_self_name())
+        self.on_blocked = on_blocked
+        self.scan_interval = scan_interval
+        self.dry_run = dry_run
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()
+
+    def set_whitelist(self, apps: Set[str]) -> None:
+        self.whitelist = set(x.lower() for x in apps)
+        self.protected.add(_get_self_name())
+
+    def is_allowed(self, name: str) -> bool:
+        if not name:
+            return True
+        pname = name.lower()
+        if pname in self.protected:
+            return True
+        if pname in self.whitelist:
+            return True
+        return False
+
+    def start(self) -> None:
+        if self._running:
+            return
+        self._running = True
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        self._running = False
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=2)
+
+    def _loop(self) -> None:
+        try:
+            import psutil
+        except ImportError:
+            logger.error("psutil is required for app blocking")
+            return
+
+        while not self._stop_event.is_set():
+            self._scan_once(psutil)
+            self._stop_event.wait(self.scan_interval)
+
+    def _scan_once(self, psutil) -> None:
+        for proc in psutil.process_iter(["pid", "name"]):
+            try:
+                name = proc.info["name"]
+                pid = proc.info["pid"]
+                if not name:
+                    continue
+                pname = name.lower()
+                if pname in self.protected:
+                    continue
+                if pname in self.whitelist:
+                    continue
+                self._terminate(proc, pname, pid)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            except Exception as e:
+                logger.debug("Error scanning process: %s", e)
+
+    def _terminate(self, proc, name: str, pid: int) -> None:
+        if self.dry_run:
+            logger.info("[DRY-RUN] Would block process: %s (pid=%d)", name, pid)
+            if self.on_blocked:
+                try:
+                    self.on_blocked(name, pid)
+                except Exception:
+                    pass
+            return
+        try:
+            proc.terminate()
+            logger.info("Blocked process: %s (pid=%d)", name, pid)
+            if self.on_blocked:
+                try:
+                    self.on_blocked(name, pid)
+                except Exception:
+                    pass
+        except psutil.NoSuchProcess:
+            pass
+        except psutil.AccessDenied:
+            logger.debug("Access denied terminating %s", name)
+        except Exception as e:
+            logger.debug("Failed to terminate %s: %s", name, e)
