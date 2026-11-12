@@ -29,11 +29,68 @@ CRITICAL_PROCESSES = {
     "powershell.exe",
     "cmd.exe",
     "explorer.exe",
+    # Windows shell / service host components. Terminating these destabilises
+    # the desktop (input, start menu, memory compression) without helping focus.
+    "ctfmon.exe",
+    "textinputhost.exe",
+    "sihost.exe",
+    "dllhost.exe",
+    "taskhostw.exe",
+    "runtimebroker.exe",
+    "searchhost.exe",
+    "searchapp.exe",
+    "startmenuexperiencehost.exe",
+    "shellexperiencehost.exe",
+    "wmiprvse.exe",
+    "spoolsv.exe",
+    "audiodg.exe",
+    "memcompression",
+    "securityhealthservice.exe",
+    "msmpeng.exe",
+    "nissrv.exe",
 }
 
 
 def _get_self_name() -> str:
     return sys.executable.lower().split("\\")[-1]
+
+
+def _windowed_pids() -> set[int]:
+    """PIDs that own a visible top-level window (Windows only).
+
+    Only these can actually distract the user. Background services, drivers and
+    command-line helpers are deliberately left alone: terminating them can break
+    input devices, audio or the desktop while doing nothing for focus.
+    """
+    if os.name != "nt":
+        return set()
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        pids: set[int] = set()
+
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        def _callback(hwnd, _lparam):
+            try:
+                if not user32.IsWindowVisible(hwnd):
+                    return True
+                if user32.GetWindowTextLengthW(hwnd) == 0:
+                    return True
+                pid = wintypes.DWORD()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                if pid.value:
+                    pids.add(int(pid.value))
+            except Exception:
+                pass
+            return True
+
+        user32.EnumWindows(_callback, 0)
+        return pids
+    except Exception:
+        # If the enumeration fails, fall back to scanning by name only.
+        return set()
 
 
 class ProcessGuard:
@@ -46,6 +103,7 @@ class ProcessGuard:
         on_blocked: Optional[Callable[[str, int], None]] = None,
         scan_interval: float = 1.5,
         dry_run: bool = False,
+        only_windowed: bool = True,
     ):
         self.whitelist: Set[str] = set(x.lower() for x in (whitelist or []))
         self.protected: Set[str] = set(x.lower() for x in (protected or [])) | CRITICAL_PROCESSES
@@ -55,6 +113,7 @@ class ProcessGuard:
         self.on_blocked = on_blocked
         self.scan_interval = scan_interval
         self.dry_run = dry_run
+        self.only_windowed = only_windowed
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -103,6 +162,7 @@ class ProcessGuard:
         # otherwise every running application would be terminated.
         if not self.whitelist:
             return
+        windowed = _windowed_pids() if self.only_windowed else set()
         for proc in psutil.process_iter(["pid", "name"]):
             try:
                 name = proc.info["name"]
@@ -110,6 +170,8 @@ class ProcessGuard:
                 if not name:
                     continue
                 if pid in (self._self_pid, self._parent_pid):
+                    continue
+                if self.only_windowed and pid not in windowed:
                     continue
                 pname = name.lower()
                 if pname in self.protected:
