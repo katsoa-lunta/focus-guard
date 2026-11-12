@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import threading
 import time
@@ -49,6 +50,8 @@ class ProcessGuard:
         self.whitelist: Set[str] = set(x.lower() for x in (whitelist or []))
         self.protected: Set[str] = set(x.lower() for x in (protected or [])) | CRITICAL_PROCESSES
         self.protected.add(_get_self_name())
+        self._self_pid = os.getpid()
+        self._parent_pid = os.getppid()
         self.on_blocked = on_blocked
         self.scan_interval = scan_interval
         self.dry_run = dry_run
@@ -96,11 +99,17 @@ class ProcessGuard:
             self._stop_event.wait(self.scan_interval)
 
     def _scan_once(self, psutil) -> None:
+        # An empty whitelist means "do not block anything" (matches the UI hint),
+        # otherwise every running application would be terminated.
+        if not self.whitelist:
+            return
         for proc in psutil.process_iter(["pid", "name"]):
             try:
                 name = proc.info["name"]
                 pid = proc.info["pid"]
                 if not name:
+                    continue
+                if pid in (self._self_pid, self._parent_pid):
                     continue
                 pname = name.lower()
                 if pname in self.protected:

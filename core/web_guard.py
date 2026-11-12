@@ -1,6 +1,7 @@
 """Web guard: local HTTP/HTTPS proxy that blocks non-whitelisted websites."""
 from __future__ import annotations
 
+import atexit
 import logging
 import re
 import select
@@ -228,18 +229,40 @@ class WebProxy:
 
 
 class SystemProxy:
-    """Configure Windows system proxy settings."""
+    """Configure Windows system proxy settings.
+
+    The previous settings are backed up on enable() and restored on disable(),
+    so other proxy tools (e.g. Steam++) keep working after a focus session.
+    """
 
     REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
 
     def __init__(self, host: str = "127.0.0.1", port: int = 17862):
         self.host = host
         self.port = port
+        self._backup: Optional[dict] = None
+
+    @staticmethod
+    def _read(key, name: str, default=None):
+        try:
+            import winreg
+            return winreg.QueryValueEx(key, name)[0]
+        except OSError:
+            return default
 
     def enable(self) -> bool:
         try:
             import winreg
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, self.REG_PATH, 0, winreg.KEY_WRITE)
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, self.REG_PATH, 0,
+                winreg.KEY_READ | winreg.KEY_WRITE,
+            )
+            if self._backup is None:
+                self._backup = {
+                    "ProxyEnable": self._read(key, "ProxyEnable", 0),
+                    "ProxyServer": self._read(key, "ProxyServer", ""),
+                    "ProxyOverride": self._read(key, "ProxyOverride", ""),
+                }
             winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 1)
             winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, f"{self.host}:{self.port}")
             winreg.CloseKey(key)
@@ -253,11 +276,29 @@ class SystemProxy:
     def disable(self) -> bool:
         try:
             import winreg
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, self.REG_PATH, 0, winreg.KEY_WRITE)
-            winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 0)
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, self.REG_PATH, 0,
+                winreg.KEY_READ | winreg.KEY_WRITE,
+            )
+            if self._backup:
+                winreg.SetValueEx(
+                    key, "ProxyEnable", 0, winreg.REG_DWORD,
+                    int(self._backup.get("ProxyEnable") or 0),
+                )
+                winreg.SetValueEx(
+                    key, "ProxyServer", 0, winreg.REG_SZ,
+                    str(self._backup.get("ProxyServer") or ""),
+                )
+                winreg.SetValueEx(
+                    key, "ProxyOverride", 0, winreg.REG_SZ,
+                    str(self._backup.get("ProxyOverride") or ""),
+                )
+                self._backup = None
+            else:
+                winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 0)
             winreg.CloseKey(key)
             self._refresh()
-            logger.info("System proxy disabled")
+            logger.info("System proxy restored")
             return True
         except Exception as e:
             logger.error("Failed to disable system proxy: %s", e)
@@ -294,7 +335,20 @@ class WebGuard:
     def start(self) -> None:
         self.proxy.start()
         self.system.enable()
+        # Safety net: restore the previous system proxy even if the process
+        # exits by an unexpected path (crash, forced close, unhandled error).
+        atexit.register(self._restore_on_exit)
+
+    def _restore_on_exit(self) -> None:
+        try:
+            self.system.disable()
+        except Exception:
+            pass
 
     def stop(self) -> None:
         self.system.disable()
         self.proxy.stop()
+        try:
+            atexit.unregister(self._restore_on_exit)
+        except Exception:
+            pass

@@ -293,7 +293,22 @@ class FocusGuardApp:
             f"累计拦截网站：{blocked_web} 次"
         )
 
+    def _ui(self, func, *args):
+        """Marshal a callback onto the Tk main thread.
+
+        Timer ticks and guard callbacks arrive from worker threads; touching Tk
+        widgets off the main thread can abort the whole process.
+        """
+        try:
+            self.root.after(0, lambda: func(*args))
+        except (tk.TclError, RuntimeError):
+            # Window already destroyed; nothing left to update.
+            pass
+
     def _on_tick(self, tick):
+        self._ui(self._apply_tick, tick)
+
+    def _apply_tick(self, tick):
         minutes, seconds = divmod(tick.remaining_seconds, 60)
         self.timer_label.configure(text=f"{minutes:02d}:{seconds:02d}")
         progress = tick.remaining_seconds / tick.total_seconds if tick.total_seconds else 0
@@ -301,9 +316,11 @@ class FocusGuardApp:
             self.progress.set(progress)
         else:
             self.progress["value"] = progress * 100
-        self.root.update_idletasks()
 
     def _on_finish(self):
+        self._ui(self._apply_finish)
+
+    def _apply_finish(self):
         self._stop_guards(save_session=True, completed=True)
         messagebox.showinfo("FocusGuard", "专注时间结束！休息一下吧。")
         self._reset_ui()
@@ -422,10 +439,16 @@ class FocusGuardApp:
             self.duration_entry.configure(state="normal")
 
     def _on_app_blocked(self, name: str, pid: int):
+        self._ui(self._apply_app_blocked, name, pid)
+
+    def _apply_app_blocked(self, name: str, pid: int):
         self._blocked_apps += 1
         self.status_label.configure(text=f"已关闭：{name}")
 
     def _on_web_blocked(self, host: str):
+        self._ui(self._apply_web_blocked, host)
+
+    def _apply_web_blocked(self, host: str):
         self._blocked_websites += 1
         self.status_label.configure(text=f"已拦截：{host}")
 
