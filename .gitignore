@@ -41,6 +41,9 @@ env/
 
 # Project runtime
 *.log
+.workbuddy/
+capture_*.py
+webui-*.png
 
 # 本地私有文档（不公开）
 ABOUT.md
