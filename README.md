@@ -153,4 +153,4 @@ python tests/reset_proxy.py
 
 ## 许可证
 
-MIT License
+[MIT License](LICENSE) © 2026 katsoa-lunta

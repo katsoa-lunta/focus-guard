@@ -41,3 +41,9 @@ env/
 
 # Project runtime
 *.log
+
+# 本地私有文档（不公开）
+ABOUT.md
+
+# 工作区数据
+.workbuddy/
